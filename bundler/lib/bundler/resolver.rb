@@ -213,7 +213,7 @@ module Bundler
 
     def relevant_sources_for_vertex(vertex)
       if vertex.root?
-        [@source_requirements[vertex.name]]
+        [@source_requirements[vertex.name]].compact
       elsif @no_aggregate_global_source
         vertex.recursive_predecessors.map do |v|
           @source_requirements[v.name]
