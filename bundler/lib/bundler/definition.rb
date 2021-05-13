@@ -112,7 +112,7 @@ module Bundler
       end
 
       @locked_gem_sources = @locked_sources.select {|s| s.is_a?(Source::Rubygems) }
-      @disable_multisource = @locked_gem_sources.all?(&:disable_multisource?)
+      @disable_multisource = @locked_gem_sources.size != 1 || @locked_gem_sources.first.disable_multisource?
 
       unless @disable_multisource
         msg = "Your lockfile contains a single rubygems source section with multiple remotes, which is insecure. You should run `bundle update` or generate your lockfile from scratch."
@@ -690,7 +690,7 @@ module Bundler
       # If there is a RubyGems source in both
       locked_gem_sources.each do |locked_gem|
         # Merge the remotes from the Gemfile into the Gemfile.lock
-        changes |= locked_gem.replace_remotes(actual_remotes, Bundler.settings[:allow_deployment_source_credential_changes])
+        changes |= locked_gem.replace_remotes(actual_remotes)
       end
 
       changes

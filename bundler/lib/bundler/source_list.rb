@@ -82,15 +82,22 @@ module Bundler
     end
 
     def get(source)
-      source_list_for(source).find {|s| equal_source?(source, s) || equivalent_source?(source, s) }
+      source_list_for(source).find {|s| equivalent_source?(source, s) }
     end
 
     def lock_sources
-      lock_sources = (path_sources + git_sources + plugin_sources).sort_by(&:to_s)
+      lock_other_sources + lock_rubygems_sources
+    end
+
+    def lock_other_sources
+      (path_sources + git_sources + plugin_sources).sort_by(&:to_s)
+    end
+
+    def lock_rubygems_sources
       if disable_multisource?
-        lock_sources + rubygems_sources.sort_by(&:to_s).uniq
+        rubygems_sources.sort_by(&:to_s).uniq
       else
-        lock_sources << combine_rubygems_sources
+        [Source::Rubygems.new("remotes" => rubygems_remotes)]
       end
     end
 
@@ -108,9 +115,7 @@ module Bundler
         replacement_sources.detect {|s| s.is_a?(Source::Rubygems) }
       @global_rubygems_source = replacement_rubygems if replacement_rubygems
 
-      return true if !equal_sources?(lock_sources, replacement_sources) && !equivalent_sources?(lock_sources, replacement_sources)
-
-      false
+      !equivalent_sources?(replacement_sources)
     end
 
     def cached!
@@ -142,10 +147,6 @@ module Bundler
       end
     end
 
-    def combine_rubygems_sources
-      Source::Rubygems.new("remotes" => rubygems_remotes)
-    end
-
     def warn_on_git_protocol(source)
       return if Bundler.settings["git.allow_insecure"]
 
@@ -157,32 +158,30 @@ module Bundler
       end
     end
 
-    def equal_sources?(lock_sources, replacement_sources)
-      lock_sources.sort_by(&:to_s) == replacement_sources.sort_by(&:to_s)
+    def equal_other_sources?(replacement_sources)
+      lock_other_sources == replacement_sources.sort_by(&:to_s)
     end
 
     def equal_source?(source, other_source)
       source == other_source
     end
 
-    def equivalent_source?(source, other_source)
-      return false unless Bundler.settings[:allow_deployment_source_credential_changes] && source.is_a?(Source::Rubygems)
-
-      equivalent_rubygems_sources?([source], [other_source])
-    end
-
-    def equivalent_sources?(lock_sources, replacement_sources)
-      return false unless Bundler.settings[:allow_deployment_source_credential_changes]
-
-      lock_rubygems_sources, lock_other_sources = lock_sources.partition {|s| s.is_a?(Source::Rubygems) }
+    def equivalent_sources?(replacement_sources)
       replacement_rubygems_sources, replacement_other_sources = replacement_sources.partition {|s| s.is_a?(Source::Rubygems) }
 
-      equivalent_rubygems_sources?(lock_rubygems_sources, replacement_rubygems_sources) && equal_sources?(lock_other_sources, replacement_other_sources)
+      equal_other_sources?(replacement_other_sources) && equal_rubygems_sources?(replacement_rubygems_sources)
     end
 
-    def equivalent_rubygems_sources?(lock_sources, replacement_sources)
-      actual_remotes = replacement_sources.map(&:remotes).flatten.uniq
-      lock_sources.all? {|s| s.equivalent_remotes?(actual_remotes) }
+    def equivalent_source?(source, other_source)
+      return equal_source?(source, other_source) unless source.is_a?(Source::Rubygems) && other_source.is_a?(Source::Rubygems)
+
+      source.equivalent_remotes?(other_source.remotes)
+    end
+
+    def equal_rubygems_sources?(replacement_sources)
+      lock_rubygems_sources.zip(replacement_sources.sort_by(&:to_s)).all? do |lock_source, replacement_source|
+        replacement_source && lock_source.equivalent_remotes?(replacement_source.remotes)
+      end
     end
   end
 end

@@ -67,7 +67,7 @@ module Bundler
 
       def can_lock?(spec)
         return super if disable_multisource?
-        spec.source.is_a?(Rubygems)
+        include?(spec.source)
       end
 
       def options
@@ -243,13 +243,13 @@ module Bundler
       end
 
       def equivalent_remotes?(other_remotes)
-        other_remotes.map(&method(:remove_auth)) == @remotes.map(&method(:remove_auth))
+        return other_remotes.sort_by(&:to_s) == @remotes.sort_by(&:to_s) unless Bundler.settings[:allow_deployment_source_credential_changes]
+
+        @remotes.map(&method(:remove_auth)).sort_by(&:to_s) == other_remotes.map(&method(:remove_auth)).sort_by(&:to_s)
       end
 
-      def replace_remotes(other_remotes, allow_equivalent = false)
-        return false if other_remotes == @remotes
-
-        equivalent = allow_equivalent && equivalent_remotes?(other_remotes)
+      def replace_remotes(other_remotes)
+        equivalent = equivalent_remotes?(other_remotes)
 
         @remotes = []
         other_remotes.reverse_each do |r|
