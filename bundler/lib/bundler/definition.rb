@@ -558,6 +558,53 @@ module Bundler
 
     private
 
+    def precompute_source_requirements_for_indirect_dependencies?
+      sources.non_global_rubygems_sources.all?(&:dependency_api_available?) && sources.no_aggregate_global_source?
+    end
+
+    def all_dependency_source_requirements
+      no_ambiguous_sources = Bundler.feature_flag.bundler_3_mode?
+      source_requirements = direct_dependency_source_requirements.dup
+
+      sources.non_default_sources.each do |source|
+        loop do
+          source_requirement_count = source_requirements.size
+          new_names = source.dependency_names_to_double_check
+
+          unless new_names.nil?
+            new_names.uniq!
+            new_names -= pinned_spec_names(source) + source.unmet_deps
+
+            new_names.each do |new_name|
+              previous_source = source_requirements[new_name]
+              if previous_source.nil?
+                source_requirements[new_name] = source
+              elsif previous_source == source
+                next
+              else
+                msg = ["The gem '#{new_name}' was found in multiple relevant sources."]
+                msg.concat [previous_source, source].map {|s| "  * #{s}" }.sort
+                msg << "You #{no_ambiguous_sources ? :must : :should} add this gem to the source block for the source you wish it to be installed from."
+                msg = msg.join("\n")
+
+                raise SecurityError, msg if no_ambiguous_sources
+                Bundler.ui.warn "Warning: #{msg}"
+              end
+            end
+          end
+
+          source.double_check_for(-> { new_names })
+
+          break if source_requirement_count == source_requirements.size
+        end
+      end
+
+      unmet_deps = sources.non_default_sources.map(&:unmet_deps).flatten.uniq - source_requirements.keys
+      sources.default_source.double_check_for(-> { unmet_deps })
+
+      source_requirements
+    end
+
     def current_ruby_platform_locked?
       return false unless generic_local_platform == Gem::Platform::RUBY
 
@@ -904,17 +951,17 @@ module Bundler
     end
 
     def source_requirements
-      # Load all specs from remote sources
-      index = build_index
-
       # Record the specs available in each gem's source, so that those
       # specs will be available later when the resolver knows where to
       # look for that gemspec (or its dependencies)
-      source_requirements = { :default => sources.default_source }.merge(direct_dependency_source_requirements)
+      source_requirements = if precompute_source_requirements_for_indirect_dependencies?
+        { :default => sources.default_source }.merge(all_dependency_source_requirements)
+      else
+        { :global => build_index }.merge(direct_dependency_source_requirements)
+      end
       metadata_dependencies.each do |dep|
         source_requirements[dep.name] = sources.metadata_source
       end
-      source_requirements[:global] = index unless Bundler.feature_flag.disable_multisource?
       source_requirements[:default_bundler] = source_requirements["bundler"] || sources.default_source
       source_requirements["bundler"] = sources.metadata_source # needs to come last to override
       source_requirements
@@ -985,6 +1032,7 @@ module Bundler
         default = sources.default_source
         dependencies.each do |dep|
           dep_source = dep.source || default
+          dep_source.dependency_names = Array(dep_source.dependency_names).push(dep.name).uniq
           source_requirements[dep.name] = dep_source
         end
         source_requirements

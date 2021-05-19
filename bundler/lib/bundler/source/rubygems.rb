@@ -260,7 +260,7 @@ module Bundler
       end
 
       def unmet_deps
-        if @allow_remote && api_fetchers.any?
+        if @allow_remote && dependency_api_available?
           remote_specs.unmet_dependency_names
         else
           []
@@ -276,7 +276,7 @@ module Bundler
 
       def double_check_for(unmet_dependency_names)
         return unless @allow_remote
-        return unless api_fetchers.any?
+        return unless dependency_api_available?
 
         unmet_dependency_names = unmet_dependency_names.call
         unless unmet_dependency_names.nil?
@@ -306,6 +306,10 @@ module Bundler
           end
         end
         names
+      end
+
+      def dependency_api_available?
+        api_fetchers.any?
       end
 
       protected
