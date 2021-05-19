@@ -21,15 +21,15 @@ module Bundler
       @rubygems_sources       = []
       @metadata_source        = Source::Metadata.new
 
-      @disable_multisource = true
+      @merged_gem_lockfile_sections = false
     end
 
-    def disable_multisource?
-      @disable_multisource
+    def merged_gem_lockfile_sections?
+      @merged_gem_lockfile_sections
     end
 
     def merged_gem_lockfile_sections!
-      @disable_multisource = false
+      @merged_gem_lockfile_sections = true
     end
 
     def add_path_source(options = {})
@@ -94,10 +94,10 @@ module Bundler
     end
 
     def lock_rubygems_sources
-      if disable_multisource?
-        rubygems_sources.sort_by(&:to_s).uniq
-      else
+      if merged_gem_lockfile_sections?
         [Source::Rubygems.new("remotes" => rubygems_remotes)]
+      else
+        rubygems_sources.sort_by(&:to_s).uniq
       end
     end
 
@@ -111,7 +111,7 @@ module Bundler
         end
       end
 
-      replacement_rubygems = !disable_multisource? &&
+      replacement_rubygems = merged_gem_lockfile_sections? &&
         replacement_sources.detect {|s| s.is_a?(Source::Rubygems) }
       @global_rubygems_source = replacement_rubygems if replacement_rubygems
 
